@@ -108,6 +108,11 @@ boolean checkReceive() {
       finished = radio.read( &receivedUUID, sizeof(receivedUUID) );
       Serial.print("Got payload ");
       Serial.println(receivedUUID);
+      impSerial.print("{\"id\": ");
+      impSerial.print(UUID);
+      impSerial.print(", \"received\":");
+      impSerial.print(receivedUUID);
+      impSerial.println("}");
     }
   }
 }
