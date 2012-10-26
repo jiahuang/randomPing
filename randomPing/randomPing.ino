@@ -1,5 +1,5 @@
 /*
-  Modified from example by J. Coliz
+ * Handshake & random ping
  */
 
 /**
@@ -10,47 +10,42 @@
 #include "nRF24L01.h"
 #include "RF24.h"
 #include "printf.h"
+#include <SoftwareSerial.h>
 
-//
-// Hardware configuration
-//
+// set up the imp
+SoftwareSerial impSerial(8, 9);
 
-// Set up nRF24L01 radio on SPI bus plus pins 9 & 10
+// handshake and accelerometer thresholds
+const int TIME_THRESHOLD_MIN = 20;
+const int TIME_THRESHOLD_MAX = 400;
+const int MIN_CROSSINGS = 4;
+const int AVG_SIZE = 5; // average the first 5 values for a baseline
+const int DELAY_TIME = 3; 
+const int THRESHOLD = 2; // accelerometer values must be greater than this
+const short ANALOG_PIN = 5; 
+const short LED_PIN = 2;
 
-RF24 radio(9,10);
-const short role_pin = 7;
-const long MIN_WAIT = 30000;
-const long MAX_WAIT = 300000;
+long timestamp = 0;
+long timestamps[MIN_CROSSINGS];
+int timestamp_pos = 0;
+int prev = 0;
+int current = 0;
+int avg = 0;
+
+// nRF24L01 setup on SPI bus plus pins 6 & 10
+RF24 radio(6,10);
+const short ROLE_PIN = 7;
+const long MIN_WAIT = 30;
+const long MAX_WAIT = 500;
 char * UUID = "MNB890";
+char * receivedUUID = "000000"; // blank UUID for the received message
 
-char * receivedUUID = "000000";
 long counter = 0;
 long counter_wait = 0;
-//
-// Topology
-//
+boolean sendMessage = false;
 
-// Single radio pipe address for the 2 nodes to communicate.
+// Single radio pipe address for all the nodes to communicate.
 const uint64_t pipe = 0xF0F0F0F0E1LL;
-  
-//
-// Role management
-//
-// Set up role.  This sketch uses the same software for all the nodes in this
-// system.  Doing so greatly simplifies testing.  The hardware itself specifies
-// which node it is.
-//
-// This is done through the role_pin
-//
-
-// The various roles supported by this sketch
-typedef enum { role_sender = 1, role_receiver } role_e;
-
-// The debug-friendly names of those roles
-const char* role_friendly_name[] = { "invalid", "Sender", "Receiver"};
-
-// The role of the current running sketch
-role_e role;
 
 void setCounter(){
   counter_wait = random(MIN_WAIT, MAX_WAIT);
@@ -59,27 +54,30 @@ void setCounter(){
 
 void setup(void)
 {
-  //
-  // Role
-  //
-
   // set up the role pin
-  pinMode(role_pin, INPUT);
-  digitalWrite(role_pin,HIGH);
+  pinMode(ROLE_PIN, INPUT);
+  digitalWrite(ROLE_PIN,HIGH);
   delay(20); // Just to get a solid reading on the role pin
 
   // read the address pin, establish our role
-  if ( ! digitalRead(role_pin) )
+  if ( ! digitalRead(ROLE_PIN) )
     UUID = "ABC123";
+  
+  // set up the accelerometer
+  int avgPos = 0;
+  while (avgPos < AVG_SIZE) {
+    avgPos++;
+    avg += analogRead(ANALOG_PIN);
+    current = prev = analogRead(ANALOG_PIN);
+    delay(DELAY_TIME);
+  }
+  avg = avg/AVG_SIZE;
   
   Serial.begin(57600);
   printf_begin();
   Serial.println("Random Ping");
 
-  //
-  // Setup and configure rf radio
-  //
-  
+  // Setup and configure rf radio  
   radio.begin();
   radio.setRetries(15,15);
   radio.setPayloadSize(8);
@@ -92,14 +90,12 @@ void setup(void)
 
   radio.startListening();
 
-  //
   // Dump the configuration of the rf unit for debugging
-  //
-
   radio.printDetails();
   
   // set the counter wait time
   setCounter();
+  
 }
 
 boolean checkReceive() {
@@ -117,28 +113,101 @@ boolean checkReceive() {
 }
 
 boolean shouldSend() {
-  if (counter > counter_wait) {
+  if (counter > counter_wait && sendMessage) {
+    Serial.print("send now ");
+    Serial.println(counter);
     counter = 0;
+    sendMessage = false;
     setCounter();
     return true;
   }
   return false;
 }
 
+boolean crossedAvg() {
+  return ((prev < avg && current > avg) || (prev > avg && current < avg));
+}
+
+void flash_led() {
+  digitalWrite(LED_PIN, HIGH);
+  delay(1000);
+  digitalWrite(LED_PIN, LOW);
+}
+
+void reset() {
+//  Serial.println("reset");
+  timestamp_pos = 0;
+  timestamp = 0;
+}
+
 void loop(void)
 {
 
-  // check receiving
+  // check for any incoming packets
   checkReceive();
+  
+  // get current value
+  current = analogRead(ANALOG_PIN);
+  
+   // check if value has crossed over median
+  if (crossedAvg()) {
+    
+    if (timestamp_pos == 0) {
+      timestamp = 0;
+      timestamps[timestamp_pos] = 0;
+      timestamp_pos++;
+    } else if (timestamp_pos < MIN_CROSSINGS) {
+      if (timestamp < TIME_THRESHOLD_MIN && timestamp_pos != 0) {
+        reset();
+      }
+      if (timestamp < TIME_THRESHOLD_MAX && timestamp > TIME_THRESHOLD_MIN) {
+        timestamps[timestamp_pos] = timestamp;
+        timestamp = 0;
+        timestamp_pos++;
+      }
+      if (timestamp_pos == MIN_CROSSINGS) {
+
+        impSerial.print("{\"id\": ");
+        impSerial.print(UUID);
+        impSerial.print(", \"values\":[");
+        for (int i = 0; i< MIN_CROSSINGS; i++) {
+          impSerial.print(timestamps[i]);
+          if (i < MIN_CROSSINGS - 1) {
+            impSerial.print(", ");
+          }
+        }
+        impSerial.println("]}");
+        Serial.println("Handshake");
+        sendMessage = true;
+        flash_led();
+        reset();
+      }
+    } else {
+      reset();
+    }
+  }
   
   if ( shouldSend() ) {
     radio.stopListening();
-    unsigned long time = millis();
     Serial.print("Now sending ");
     Serial.println(UUID);
     radio.write( &UUID, sizeof(UUID) );
     radio.startListening();
   }
   
-  ++counter;
+  if (sendMessage) {
+//    Serial.println(counter);
+    ++counter;
+  }
+  
+  // if its gone over the max time threshold reset everything
+  if (timestamp > TIME_THRESHOLD_MAX) {
+    reset();
+  }
+  if (timestamp_pos != 0) {
+    timestamp++; // make sure this isn't overflowing
+  }
+  prev = current;
+  
+  delay(DELAY_TIME);
 }
