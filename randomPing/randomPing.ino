@@ -112,9 +112,9 @@ boolean checkReceive() {
       Serial.println(receivedUUID);
       impSerial.print("{\"id\": ");
       impSerial.print(UUID);
-      impSerial.print(", \"received\":");
+      impSerial.print(", \"received\": \"");
       impSerial.print(receivedUUID);
-      impSerial.println("}");
+      impSerial.println("\"}");
     }
   }
 }
@@ -200,7 +200,7 @@ void loop(void)
   
   if ( shouldSend() ) {
     radio.stopListening();
-    Serial.print("Now sending ");
+    Serial.print("Now broadcasting UUID ");
     Serial.println(UUID);
     radio.write( &UUID, sizeof(UUID) );
     radio.startListening();
