@@ -111,11 +111,13 @@ boolean checkReceive() {
       finished = radio.read( &receivedUUID, sizeof(receivedUUID) );
       Serial.print("Sending received UUID to the imp: ");
       Serial.println(receivedUUID);
+      impSerial.print("$");
       impSerial.print("{\"id\": ");
       impSerial.print(UUID);
       impSerial.print(", \"received\": \"");
       impSerial.print(receivedUUID);
-      impSerial.println("\"}");
+      impSerial.print("\"}");
+      impSerial.println("#");
     }
   }
 }
@@ -178,7 +180,7 @@ void loop(void)
         timestamp_pos++;
       }
       if (timestamp_pos == MIN_CROSSINGS) {
-
+        impSerial.print("$"); // start delimiter 
         impSerial.print("{\"id\": ");
         impSerial.print(UUID);
         impSerial.print(", \"values\":[");
@@ -188,7 +190,8 @@ void loop(void)
             impSerial.print(", ");
           }
         }
-        impSerial.println("]}");
+        impSerial.print("]}");
+        impSerial.println("#"); // end delimiter for imp code 
         Serial.print("UUID:");
         Serial.println(UUID);
         Serial.println("Sent handshake data to the imp");
