@@ -76,6 +76,7 @@ void setup(void)
   avg = avg/AVG_SIZE;
   
   Serial.begin(57600);
+  impSerial.begin(19200);
   printf_begin();
   Serial.println("Random Ping");
 
@@ -188,6 +189,8 @@ void loop(void)
           }
         }
         impSerial.println("]}");
+        Serial.print("UUID:");
+        Serial.println(UUID);
         Serial.println("Sent handshake data to the imp");
         sendMessage = true;
         led_count = 1;
