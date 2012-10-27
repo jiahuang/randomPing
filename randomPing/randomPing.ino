@@ -23,8 +23,10 @@ const int AVG_SIZE = 5; // average the first 5 values for a baseline
 const int DELAY_TIME = 3; 
 const int THRESHOLD = 2; // accelerometer values must be greater than this
 const short ANALOG_PIN = 5; 
-const short LED_PIN = 2;
+const short LED_PIN = 5;
+const int LED_DELAY = 1000/DELAY_TIME;
 
+int led_count = -1;
 long timestamp = 0;
 long timestamps[MIN_CROSSINGS];
 int timestamp_pos = 0;
@@ -106,7 +108,7 @@ boolean checkReceive() {
     while (!finished)
     {
       finished = radio.read( &receivedUUID, sizeof(receivedUUID) );
-      Serial.print("Got payload ");
+      Serial.print("Sending received UUID to the imp: ");
       Serial.println(receivedUUID);
       impSerial.print("{\"id\": ");
       impSerial.print(UUID);
@@ -134,9 +136,13 @@ boolean crossedAvg() {
 }
 
 void flash_led() {
-  digitalWrite(LED_PIN, HIGH);
-  delay(1000);
-  digitalWrite(LED_PIN, LOW);
+  if (led_count != -1 && led_count <= LED_DELAY) {
+    ++led_count;
+    digitalWrite(LED_PIN, HIGH);
+  } else if (led_count == -1 || led_count > LED_DELAY) {
+    led_count = -1;
+    digitalWrite(LED_PIN, LOW);
+  }
 }
 
 void reset() {
@@ -182,9 +188,9 @@ void loop(void)
           }
         }
         impSerial.println("]}");
-        Serial.println("Handshake");
+        Serial.println("Sent handshake data to the imp");
         sendMessage = true;
-        flash_led();
+        led_count = 1;
         reset();
       }
     } else {
@@ -204,6 +210,8 @@ void loop(void)
 //    Serial.println(counter);
     ++counter;
   }
+
+  flash_led();
   
   // if its gone over the max time threshold reset everything
   if (timestamp > TIME_THRESHOLD_MAX) {
