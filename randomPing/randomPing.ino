@@ -11,6 +11,8 @@
 #include "RF24.h"
 #include "printf.h"
 #include <SoftwareSerial.h>
+#include <EEPROM.h>
+#include <EEPROMAnything.h>
 
 // set up the imp
 SoftwareSerial impSerial(8, 9);
@@ -28,12 +30,25 @@ const short ANALOG_PIN = 5;
 const short LED_PIN = 5;
 const int LED_DELAY = 1000;
 
-// Starting address of uid in EEPROM
-const int START_UID_ADDRESS = 0;
-// Size, in bytes, of UID
-const int UID_SIZE = 8;
+// START_UP_STRING_CODE is a code that we can check EEPROM for to see if we have 
+// already saved a UID in EEPROM. We save this code to memory just after
+// receiving the UID. The reason for it is 
+// because our EEPROM isn't guaranteed to be uninitualized. Therefore,
+// we can't just check a certain point in EEPROM memory for a UID
+// because it might be trash. Instead, we will check the EEPROM for this
+// code at a certain point in memory that basically tells us that 
+// we have already saved a UID. 
+char START_UP_STRING_CODE[] = "ALREADY STORED";
+// Where we are saving the code in EEPROM
+const int START_UP_STRING_CODE_ADDRESS = 230;
 
+// The first address that the uid is saved at
+const int START_UID_ADDRESS = 250;
+// The size, in bytes, of the UID
+const int UID_SIZE = 8;
+// The uid itself. It can be loaded
 byte UID[UID_SIZE];
+
 
 int led_count = -1;
 long timestamp = 0;
@@ -79,9 +94,6 @@ void setup(void)
   impSerial.begin(19200);
   printf_begin();
   Serial.println("Random Ping");
-  
-  // Check if we don't already have a uid
-  loadDeviceUID();
 
   // Setup and configure rf radio  
   radio.begin();
@@ -98,6 +110,11 @@ void setup(void)
   Serial.println(avg);
   // Dump the configuration of the rf unit for debugging
   radio.printDetails();  
+  
+ if (!deviceUidIsStored()) {
+   loadNewUIDFromServer(); 
+   Serial.println("No UID Found. Requesting one from server...");
+  }
 }
 
 boolean checkReceive() {
@@ -143,21 +160,21 @@ void reset() {
 
 //impSerial
 void sendImpValues() {
-  Serial.print("$"); // start delimiter 
-  Serial.print("{\"id\": ");
-  Serial.print(UUID);
-  Serial.print(", \"values\":[");
+  impSerial.print("$"); // start delimiter 
+  impSerial.print("{\"id\": ");
+  impSerial.print(UUID);
+  impSerial.print(", \"values\":[");
   for (int i = 0; i< timestamp_pos; i++) {
-    Serial.print(timestamps[i]);
+    impSerial.print(timestamps[i]);
     if (i < timestamp_pos - 1) {
-      Serial.print(", ");
+      impSerial.print(", ");
     }
   }
-  Serial.print("]}");
-  Serial.println("#"); // end delimiter for imp code 
-  Serial.print("UUID:");
-  Serial.println(UUID);
-  Serial.println("Sent handshake data to the imp");
+  impSerial.print("]}");
+  impSerial.println("#"); // end delimiter for imp code 
+  impSerial.print("UUID:");
+  impSerial.println(UUID);
+  impSerial.println("Sent handshake data to the imp");
   sendMessage = true;
   led_count = 1;
   reset();
@@ -218,15 +235,59 @@ void loop(void)
   delay(DELAY_TIME);
 }
 
-void loadDeviceUID() {
-  for (int i = 0; i < UID_SIZE; i++) {
-     UID[i] = EEPROM.read(START_UID_ADDRESS + i);
-  }
+
+/*****************************************
+
+Device UID Code
+
+*****************************************/
+
+
+/* Returns a boolean whether not not
+  the device id is stored by testing 
+  for the existence of the start up 
+  string code.
+  */
+boolean deviceUidIsStored() {
   
-  Serial.println("Device UID: " + UID);
-  
+ int codeSize = (sizeof(START_UP_STRING_CODE));
+
+ for (int i = 0; i < codeSize-1; i++) {
+     if (START_UP_STRING_CODE[i] != EEPROM.read(START_UP_STRING_CODE_ADDRESS + i)) {
+       return false;
+     }
+   } 
+   
+   return true;
 }
 
-boolean deviceHasUID() {
-  
+
+void loadDeviceUIDFromEEPROM() {
+  // Grab all the bytes from the UID in EEPROM
+  for (int i = 0; i < UID_SIZE; i++) {
+     UID[i] = EEPROM.read(START_UID_ADDRESS + i);
+  } 
+}
+
+void loadNewUIDFromServer() {
+  impSerial.print("\"{ RequestNewUIDFromServer\" }");
+}
+
+void manuallyClearEEPROM(int address, int s) {
+  for (int i = 0; i < s; i++) {
+    EEPROM.write(address + i, 0);
+  }
+}
+
+void printUID() {
+  if (deviceUidIsStored()) {
+    
+      for (int i = 0; i < UID_SIZE; i++) {
+      Serial.print(UID[i], HEX);
+    }  
+    Serial.println("\nEND UID");
+  }  
+  else {
+     Serial.println("No UID Stored"); 
+  }
 }
