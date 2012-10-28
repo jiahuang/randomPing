@@ -16,15 +16,17 @@
 SoftwareSerial impSerial(8, 9);
 
 // handshake and accelerometer thresholds
-const int TIME_THRESHOLD_MIN = 20;
-const int TIME_THRESHOLD_MAX = 400;
+const int TIME_THRESHOLD_MIN = 100;
+const int TIME_THRESHOLD_MAX = 500;
 const int MIN_CROSSINGS = 4;
-const int AVG_SIZE = 5; // average the first 5 values for a baseline
-const int DELAY_TIME = 3; 
-const int THRESHOLD = 2; // accelerometer values must be greater than this
+const int MAX_CROSSINGS = 40;
+const int THRESHOLD = 5;
+const int MAX_THRESHOLD = 10;
+const int AVG_SIZE = 10; // average the first values for a baseline
+const int DELAY_TIME = 1; 
 const short ANALOG_PIN = 5; 
 const short LED_PIN = 5;
-const int LED_DELAY = 1000/DELAY_TIME;
+const int LED_DELAY = 1000;
 
 // Starting address of uid in EEPROM
 const int START_UID_ADDRESS = 0;
@@ -35,7 +37,7 @@ byte UID[UID_SIZE];
 
 int led_count = -1;
 long timestamp = 0;
-long timestamps[MIN_CROSSINGS];
+long timestamps[MAX_CROSSINGS];
 int timestamp_pos = 0;
 int prev = 0;
 int current = 0;
@@ -44,22 +46,13 @@ int avg = 0;
 // nRF24L01 setup on SPI bus plus pins 6 & 10
 RF24 radio(6,10);
 const short ROLE_PIN = 7;
-const long MIN_WAIT = 30;
-const long MAX_WAIT = 500;
 char * UUID = "MNB890";
 char * receivedUUID = "000000"; // blank UUID for the received message
 
-long counter = 0;
-long counter_wait = 0;
 boolean sendMessage = false;
 
 // Single radio pipe address for all the nodes to communicate.
 const uint64_t pipe = 0xF0F0F0F0E1LL;
-
-void setCounter(){
-  counter_wait = random(MIN_WAIT, MAX_WAIT);
-  Serial.println(counter_wait);
-}
 
 void setup(void)
 {
@@ -102,13 +95,9 @@ void setup(void)
   radio.openReadingPipe(1,pipe);
 
   radio.startListening();
-
+  Serial.println(avg);
   // Dump the configuration of the rf unit for debugging
-  radio.printDetails();
-  
-  // set the counter wait time
-  setCounter();
-  
+  radio.printDetails();  
 }
 
 boolean checkReceive() {
@@ -132,20 +121,9 @@ boolean checkReceive() {
   }
 }
 
-boolean shouldSend() {
-  if (counter > counter_wait && sendMessage) {
-    Serial.print("send now ");
-    Serial.println(counter);
-    counter = 0;
-    sendMessage = false;
-    setCounter();
-    return true;
-  }
-  return false;
-}
-
 boolean crossedAvg() {
-  return ((prev < avg && current > avg) || (prev > avg && current < avg));
+  return (((prev < avg && current > avg) || (prev > avg && current < avg)) && 
+    abs(current - prev) >= THRESHOLD && abs(current-prev) < MAX_THRESHOLD );
 }
 
 void flash_led() {
@@ -159,9 +137,30 @@ void flash_led() {
 }
 
 void reset() {
-//  Serial.println("reset");
   timestamp_pos = 0;
   timestamp = 0;
+}
+
+//impSerial
+void sendImpValues() {
+  Serial.print("$"); // start delimiter 
+  Serial.print("{\"id\": ");
+  Serial.print(UUID);
+  Serial.print(", \"values\":[");
+  for (int i = 0; i< timestamp_pos; i++) {
+    Serial.print(timestamps[i]);
+    if (i < timestamp_pos - 1) {
+      Serial.print(", ");
+    }
+  }
+  Serial.print("]}");
+  Serial.println("#"); // end delimiter for imp code 
+  Serial.print("UUID:");
+  Serial.println(UUID);
+  Serial.println("Sent handshake data to the imp");
+  sendMessage = true;
+  led_count = 1;
+  reset();
 }
 
 void loop(void)
@@ -172,67 +171,45 @@ void loop(void)
   
   // get current value
   current = analogRead(ANALOG_PIN);
-  
+//  Serial.println(current);
+
    // check if value has crossed over median
   if (crossedAvg()) {
-    
-    if (timestamp_pos == 0) {
+//    Serial.print("prev: ");
+//    Serial.print(prev);
+//    Serial.print(" current: ");
+//    Serial.println(current);
+    if (timestamp_pos >= MAX_CROSSINGS) {
+      //send over the data
+      sendImpValues();
+    } else if (timestamp_pos == 0) {
       timestamp = 0;
       timestamps[timestamp_pos] = 0;
       timestamp_pos++;
-    } else if (timestamp_pos < MIN_CROSSINGS) {
-      if (timestamp < TIME_THRESHOLD_MIN && timestamp_pos != 0) {
-        reset();
-      }
-      if (timestamp < TIME_THRESHOLD_MAX && timestamp > TIME_THRESHOLD_MIN) {
-        timestamps[timestamp_pos] = timestamp;
-        timestamp = 0;
-        timestamp_pos++;
-      }
-      if (timestamp_pos == MIN_CROSSINGS) {
-        impSerial.print("$"); // start delimiter 
-        impSerial.print("{\"id\": ");
-        impSerial.print(UUID);
-        impSerial.print(", \"values\":[");
-        for (int i = 0; i< MIN_CROSSINGS; i++) {
-          impSerial.print(timestamps[i]);
-          if (i < MIN_CROSSINGS - 1) {
-            impSerial.print(", ");
-          }
-        }
-        impSerial.print("]}");
-        impSerial.println("#"); // end delimiter for imp code 
-        Serial.print("UUID:");
-        Serial.println(UUID);
-        Serial.println("Sent handshake data to the imp");
-        sendMessage = true;
-        led_count = 1;
-        reset();
-      }
-    } else {
-      reset();
+    } else if (timestamp_pos < MAX_CROSSINGS && 
+      timestamp < TIME_THRESHOLD_MAX && timestamp > TIME_THRESHOLD_MIN) {
+      timestamps[timestamp_pos] = timestamp;
+      timestamp = 0;
+      timestamp_pos++;
     }
+  } else if (timestamp_pos >= MIN_CROSSINGS && timestamp > TIME_THRESHOLD_MAX){
+    // send over the data
+    sendImpValues();
+  } else if (timestamp_pos < MIN_CROSSINGS && timestamp > TIME_THRESHOLD_MAX) {
+    reset();
   }
   
-  if ( shouldSend() ) {
-    radio.stopListening();
+  if ( sendMessage ) {
+    sendMessage = false;
     Serial.print("Now broadcasting UUID ");
     Serial.println(UUID);
+    radio.stopListening();
     radio.write( &UUID, sizeof(UUID) );
     radio.startListening();
-  }
-  
-  if (sendMessage) {
-//    Serial.println(counter);
-    ++counter;
   }
 
   flash_led();
   
-  // if its gone over the max time threshold reset everything
-  if (timestamp > TIME_THRESHOLD_MAX) {
-    reset();
-  }
   if (timestamp_pos != 0) {
     timestamp++; // make sure this isn't overflowing
   }
