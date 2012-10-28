@@ -26,6 +26,13 @@ const short ANALOG_PIN = 5;
 const short LED_PIN = 5;
 const int LED_DELAY = 1000/DELAY_TIME;
 
+// Starting address of uid in EEPROM
+const int START_UID_ADDRESS = 0;
+// Size, in bytes, of UID
+const int UID_SIZE = 8;
+
+byte UID[UID_SIZE];
+
 int led_count = -1;
 long timestamp = 0;
 long timestamps[MIN_CROSSINGS];
@@ -79,6 +86,9 @@ void setup(void)
   impSerial.begin(19200);
   printf_begin();
   Serial.println("Random Ping");
+  
+  // Check if we don't already have a uid
+  loadDeviceUID();
 
   // Setup and configure rf radio  
   radio.begin();
@@ -229,4 +239,17 @@ void loop(void)
   prev = current;
   
   delay(DELAY_TIME);
+}
+
+void loadDeviceUID() {
+  for (int i = 0; i < UID_SIZE; i++) {
+     UID[i] = EEPROM.read(START_UID_ADDRESS + i);
+  }
+  
+  Serial.println("Device UID: " + UID);
+  
+}
+
+boolean deviceHasUID() {
+  
 }
