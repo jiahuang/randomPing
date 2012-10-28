@@ -19,7 +19,7 @@ SoftwareSerial impSerial(8, 9);
 const int TIME_THRESHOLD_MIN = 100;
 const int TIME_THRESHOLD_MAX = 500;
 const int MIN_CROSSINGS = 4;
-const int MAX_CROSSINGS = 20;
+const int MAX_CROSSINGS = 40;
 const int THRESHOLD = 5;
 const int MAX_THRESHOLD = 10;
 const int AVG_SIZE = 10; // average the first values for a baseline
