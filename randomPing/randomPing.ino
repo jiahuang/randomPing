@@ -131,11 +131,11 @@ boolean checkReceive() {
 //      Serial.println(receivedUUID);
       Serial.println("That was the received UUID");
       impSerial.print("$");
-      impSerial.print("{\"id\": ");
+      impSerial.print("{\"id\": \"");
       for (int i = 0; i < UUID_SIZE;i++) {
         impSerial.print(UUID[i], DEC);
       }
-      impSerial.print(", \"received\": \"");
+      impSerial.print("\", \"received\": \"");
       for (int i = 0; i < UUID_SIZE;i++) {
         impSerial.print(receivedUUID[i], DEC);
       }
@@ -231,9 +231,9 @@ void loop(void)
   if ( sendMessage ) {
     sendMessage = false;
     Serial.print("Now broadcasting UUID ");
-  for (int i = 0; i < UUID_SIZE;i++) {
-    Serial.print(UUID[i], DEC);
-  }
+    for (int i = 0; i < UUID_SIZE;i++) {
+      Serial.print(UUID[i], DEC);
+    }
     radio.stopListening();
     radio.write( &UUID, UUID_SIZE );
     radio.startListening();
