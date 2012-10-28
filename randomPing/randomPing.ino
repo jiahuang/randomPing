@@ -13,6 +13,7 @@
 #include <SoftwareSerial.h>
 #include <EEPROM.h>
 #include <EEPROMAnything.h>
+#include <TrueRandom.h>
 
 // set up the imp
 SoftwareSerial impSerial(8, 9);
@@ -41,14 +42,15 @@ const int LED_DELAY = 1000;
 char START_UP_STRING_CODE[] = "ALREADY STORED";
 // Where we are saving the code in EEPROM
 const int START_UP_STRING_CODE_ADDRESS = 230;
+// The first address that the UUID is saved at
+const int START_UUID_ADDRESS = 250;
+// The size, in bytes, of the UUID
+const int UUID_SIZE = 16;
+// The UUID itself. It can be loaded
+char UUID[UUID_SIZE];
 
-// The first address that the uid is saved at
-const int START_UID_ADDRESS = 250;
-// The size, in bytes, of the UID
-const int UID_SIZE = 8;
-// The uid itself. It can be loaded
-byte UID[UID_SIZE];
 
+char * receivedUUID = "000000"; // blank UUID for the received message
 
 int led_count = -1;
 long timestamp = 0;
@@ -61,8 +63,6 @@ int avg = 0;
 // nRF24L01 setup on SPI bus plus pins 6 & 10
 RF24 radio(6,10);
 const short ROLE_PIN = 7;
-char * UUID = "MNB890";
-char * receivedUUID = "000000"; // blank UUID for the received message
 
 boolean sendMessage = false;
 
@@ -70,16 +70,7 @@ boolean sendMessage = false;
 const uint64_t pipe = 0xF0F0F0F0E1LL;
 
 void setup(void)
-{
-  // set up the role pin
-  pinMode(ROLE_PIN, INPUT);
-  digitalWrite(ROLE_PIN,HIGH);
-  delay(20); // Just to get a solid reading on the role pin
-
-  // read the address pin, establish our role
-  if ( ! digitalRead(ROLE_PIN) )
-    UUID = "ABC123";
-  
+{ 
   // set up the accelerometer
   int avgPos = 0;
   while (avgPos < AVG_SIZE) {
@@ -111,9 +102,17 @@ void setup(void)
   // Dump the configuration of the rf unit for debugging
   radio.printDetails();  
   
- if (!deviceUidIsStored()) {
-   loadNewUIDFromServer(); 
-   Serial.println("No UID Found. Requesting one from server...");
+  // Uncomment the line below to clear the UUID
+  //  clearUUID();
+  
+  if (!deviceUUIDIsStored()) { 
+   Serial.println("No UUID Found. Creating one...");
+   createNewUUID();
+  } else {
+   Serial.println("UUID Found: ");
+   loadDeviceUUIDFromEEPROM();
+   printUUID(); 
+   Serial.println("End UID");
   }
 }
 
@@ -172,9 +171,9 @@ void sendImpValues() {
   }
   impSerial.print("]}");
   impSerial.println("#"); // end delimiter for imp code 
-  impSerial.print("UUID:");
-  impSerial.println(UUID);
-  impSerial.println("Sent handshake data to the imp");
+  Serial.print("UUID:");
+  Serial.println(UUID);
+  Serial.println("Sent handshake data to the imp");
   sendMessage = true;
   led_count = 1;
   reset();
@@ -238,7 +237,7 @@ void loop(void)
 
 /*****************************************
 
-Device UID Code
+Device UUID Code
 
 *****************************************/
 
@@ -248,10 +247,10 @@ Device UID Code
   for the existence of the start up 
   string code.
   */
-boolean deviceUidIsStored() {
+boolean deviceUUIDIsStored() {
   
  int codeSize = (sizeof(START_UP_STRING_CODE));
-
+ 
  for (int i = 0; i < codeSize-1; i++) {
      if (START_UP_STRING_CODE[i] != EEPROM.read(START_UP_STRING_CODE_ADDRESS + i)) {
        return false;
@@ -262,15 +261,37 @@ boolean deviceUidIsStored() {
 }
 
 
-void loadDeviceUIDFromEEPROM() {
+void loadDeviceUUIDFromEEPROM() {
   // Grab all the bytes from the UID in EEPROM
-  for (int i = 0; i < UID_SIZE; i++) {
-     UID[i] = EEPROM.read(START_UID_ADDRESS + i);
+  for (int i = 0; i < UUID_SIZE; i++) {
+     UUID[i] = EEPROM.read(START_UUID_ADDRESS + i);
   } 
 }
 
-void loadNewUIDFromServer() {
-  impSerial.print("\"{ RequestNewUIDFromServer\" }");
+
+void createNewUUID() {
+  // Clear some space for the uuid 
+  uint8_t *address = (uint8_t *)malloc(UUID_SIZE);
+  memset(address, '\0', UUID_SIZE);
+  
+  // Create the uuid
+  TrueRandom.uuid(address); 
+  
+  Serial.println("UUID created: ");
+  
+  // Store that UUID in EEPROM
+  for (int i = 0; i < UUID_SIZE; i++) {
+    EEPROM.write(START_UUID_ADDRESS + i, *(address + i));
+    Serial.print(*(address + i));
+  }
+  
+  Serial.println("");
+  
+  // Free the space at the address
+  free(address);
+  
+  // Store the start up code so we know we have a code
+  EEPROM_writeAnything(START_UP_STRING_CODE_ADDRESS, START_UP_STRING_CODE);
 }
 
 void manuallyClearEEPROM(int address, int s) {
@@ -279,15 +300,20 @@ void manuallyClearEEPROM(int address, int s) {
   }
 }
 
-void printUID() {
-  if (deviceUidIsStored()) {
+void clearUUID() {
+  manuallyClearEEPROM(START_UUID_ADDRESS, UUID_SIZE);
+  manuallyClearEEPROM(START_UP_STRING_CODE_ADDRESS, sizeof(START_UP_STRING_CODE));
+}
+
+void printUUID() {
+  if (deviceUUIDIsStored()) {
     
-      for (int i = 0; i < UID_SIZE; i++) {
-      Serial.print(UID[i], HEX);
-    }  
-    Serial.println("\nEND UID");
+      for (int i = 0; i < UUID_SIZE; i++) {
+      Serial.print(UUID[i]);
+    }
+  Serial.println("");  
   }  
   else {
-     Serial.println("No UID Stored"); 
+     Serial.println("No UUID Stored"); 
   }
 }
