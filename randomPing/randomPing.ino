@@ -311,7 +311,7 @@ void printUUID() {
       for (int i = 0; i < UUID_SIZE; i++) {
       Serial.print(UUID[i]);
     }
-  Serial.println("");  
+   Serial.println("");  
   }  
   else {
      Serial.println("No UUID Stored"); 
