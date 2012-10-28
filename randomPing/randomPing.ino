@@ -24,14 +24,30 @@ const int TIME_THRESHOLD_MIN = 100;
 const int TIME_THRESHOLD_MAX = 500;
 const int MIN_CROSSINGS = 4;
 const int MAX_CROSSINGS = 40;
-const int THRESHOLD = 5;
-const int MAX_THRESHOLD = 10;
+const int THRESHOLD = 3;
+const int MAX_THRESHOLD = 5;
 const int AVG_SIZE = 10; // average the first values for a baseline
 const int DELAY_TIME = 1; 
 const short ANALOG_PIN = 5; 
 const short LED_PIN = 5;
 const int LED_DELAY = 1000;
 
+int led_count = -1;
+boolean ledError = false;
+long timestamp = 0;
+long timestamps[MAX_CROSSINGS];
+int timestamp_pos = 0;
+int prev = 0;
+int current = 0;
+int avg = 0;
+
+// UUID paring
+boolean synced = false;
+// check if paring is already done in EERPROM
+char START_UP_SYNC_CODE[] = "PAIRED";
+const int START_UP_SYNC_ADDRESS = 130;
+
+/* EEPROM UUID
 // START_UP_STRING_CODE is a code that we can check EEPROM for to see if we have 
 // already saved a UID in EEPROM. We save this code to memory just after
 // receiving the UID. The reason for it is 
@@ -40,6 +56,7 @@ const int LED_DELAY = 1000;
 // because it might be trash. Instead, we will check the EEPROM for this
 // code at a certain point in memory that basically tells us that 
 // we have already saved a UID. 
+*/
 char START_UP_STRING_CODE[] = "ALREADY STORED";
 // Where we are saving the code in EEPROM
 const int START_UP_STRING_CODE_ADDRESS = 230;
@@ -52,13 +69,6 @@ byte UUID[UUID_SIZE];
 
 byte receivedUUID[UUID_SIZE]; // blank UUID for the received message
 
-int led_count = -1;
-long timestamp = 0;
-long timestamps[MAX_CROSSINGS];
-int timestamp_pos = 0;
-int prev = 0;
-int current = 0;
-int avg = 0;
 
 // nRF24L01 setup on SPI bus plus pins 6 & 10
 RF24 radio(6,10);
@@ -105,7 +115,7 @@ void setup(void)
   // Uncomment the line below to clear the UUID
 //    clearUUID();
   
-  if (!deviceUUIDIsStored()) { 
+  if (!isStoredEEPROM(START_UP_STRING_CODE, START_UP_STRING_CODE_ADDRESS)) { 
    Serial.println("No UUID Found. Creating one...");
    createNewUUID();
   } else {
@@ -113,8 +123,21 @@ void setup(void)
    loadDeviceUUIDFromEEPROM();
    printUUID();
   }
+  
+  // Uncomment the line below to clear the sync
+//    clearSync();
+  if (!isStoredEEPROM(START_UP_SYNC_CODE, START_UP_SYNC_ADDRESS)){
+    Serial.println("device is not synced");
+    ledError = true;
+  } else {
+    synced = true;
+    Serial.println("device already synced");
+  }
 }
 
+/*
+  Check if nRF24 has received any data. If it has, send it to the imp
+  */
 boolean checkReceive() {
    // if there is data
   if ( radio.available() )
@@ -146,27 +169,39 @@ boolean checkReceive() {
   }
 }
 
+/*
+  Check if values have crossed over baseline that's within threshold values
+  */
 boolean crossedAvg() {
   return (((prev < avg && current > avg) || (prev > avg && current < avg)) && 
     abs(current - prev) >= THRESHOLD && abs(current-prev) < MAX_THRESHOLD );
 }
 
+/* 
+  Flashes the LED for LED_DELAY time if something has occured
+  set led_count = 0 when this should go off
+ */
 void flash_led() {
-  if (led_count != -1 && led_count <= LED_DELAY) {
+  if ( (led_count != -1 || ledError) && led_count <= LED_DELAY) {
     ++led_count;
     digitalWrite(LED_PIN, HIGH);
-  } else if (led_count == -1 || led_count > LED_DELAY) {
+  } else if ( led_count == -1 || led_count > LED_DELAY) {
     led_count = -1;
     digitalWrite(LED_PIN, LOW);
   }
 }
 
+/*
+  resets the timestamp logging
+ */
 void reset() {
   timestamp_pos = 0;
   timestamp = 0;
 }
 
-//impSerial
+/* 
+  Send timestamp array over to the imp 
+  */
 void sendImpValues() {
   impSerial.print("$"); // start delimiter 
   impSerial.print("{\"id\": ");
@@ -181,6 +216,7 @@ void sendImpValues() {
     }
   }
   impSerial.print("]}");
+  
   impSerial.println("#"); // end delimiter for imp code 
 //  Serial.print("UUID:");
 //  for (int i = 0; i< 16; i++) {
@@ -188,13 +224,26 @@ void sendImpValues() {
 //  }
   Serial.println("Sent handshake data to the imp");
   sendMessage = true;
-  led_count = 1;
+  led_count = 0;
   reset();
 }
 
 void loop(void)
 {
-
+  // check if the device got synced
+  if (!synced) {
+    int * ref;
+    if ( checkImpSerial(ref) ){
+      if (*ref == 1) {
+        synced = true;
+        // Store the sync flag so we know we're synced
+        EEPROM_writeAnything(START_UP_SYNC_ADDRESS, START_UP_SYNC_CODE);
+      } else {
+        ledError = true;
+      }
+    }
+  }
+  
   // check for any incoming packets
   checkReceive();
   
@@ -231,24 +280,34 @@ void loop(void)
   if ( sendMessage ) {
     sendMessage = false;
     Serial.print("Now broadcasting UUID ");
-  for (int i = 0; i < UUID_SIZE;i++) {
-    Serial.print(UUID[i], DEC);
-  }
+    for (int i = 0; i < UUID_SIZE;i++) {
+      Serial.print(UUID[i], DEC);
+    }
     radio.stopListening();
     radio.write( &UUID, UUID_SIZE );
     radio.startListening();
+    Serial.println("... Done");
   }
 
   flash_led();
   
   if (timestamp_pos != 0) {
-    timestamp++; // make sure this isn't overflowing
+    timestamp++;
   }
   prev = current;
   
   delay(DELAY_TIME);
 }
 
+// checking imp values
+boolean checkImpSerial(int * ref) {
+  if (impSerial.available()) {
+    int temp = impSerial.read();
+    *ref = impSerial.read();
+    return true;
+  }
+  return false;
+}
 
 /*****************************************
 
@@ -259,16 +318,16 @@ Device UUID Code
 
 /* 
   Returns a boolean whether not not
-  the device id is stored by testing 
+  the item is stored by testing 
   for the existence of the start up 
   string code.
   */
-boolean deviceUUIDIsStored() {
+boolean isStoredEEPROM(const char * checkString, const int address) {
   
- int codeSize = (sizeof(START_UP_STRING_CODE));
+ int codeSize = (sizeof(checkString));
  
  for (int i = 0; i < codeSize-1; i++) {
-     if (START_UP_STRING_CODE[i] != EEPROM.read(START_UP_STRING_CODE_ADDRESS + i)) {
+     if (checkString[i] != EEPROM.read(address + i)) {
        return false;
      }
    } 
@@ -339,7 +398,7 @@ void clearUUID() {
   Print the UUID out in human readable form
   */
 void printUUID() {
-  if (deviceUUIDIsStored()) {
+  if (isStoredEEPROM(START_UP_STRING_CODE, START_UP_STRING_CODE_ADDRESS)) {
     
       for (int i = 0; i < UUID_SIZE; i++) {
       Serial.print(UUID[i], DEC);
