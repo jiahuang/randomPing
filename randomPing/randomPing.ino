@@ -7,6 +7,7 @@
  */
 
 #include <SPI.h>
+#include <stdlib.h>
 #include "nRF24L01.h"
 #include "RF24.h"
 #include "printf.h"
@@ -47,8 +48,7 @@ const int START_UUID_ADDRESS = 250;
 // The size, in bytes, of the UUID
 const int UUID_SIZE = 16;
 // The UUID itself. It can be loaded
-char UUID[UUID_SIZE];
-
+byte UUID[UUID_SIZE];
 
 char * receivedUUID = "000000"; // blank UUID for the received message
 
@@ -103,7 +103,7 @@ void setup(void)
   radio.printDetails();  
   
   // Uncomment the line below to clear the UUID
-  //  clearUUID();
+//    clearUUID();
   
   if (!deviceUUIDIsStored()) { 
    Serial.println("No UUID Found. Creating one...");
@@ -111,8 +111,7 @@ void setup(void)
   } else {
    Serial.println("UUID Found: ");
    loadDeviceUUIDFromEEPROM();
-   printUUID(); 
-   Serial.println("End UID");
+   printUUID();
   }
 }
 
@@ -128,7 +127,9 @@ boolean checkReceive() {
       Serial.println(receivedUUID);
       impSerial.print("$");
       impSerial.print("{\"id\": ");
-      impSerial.print(UUID);
+      for (int i = 0; i < UUID_SIZE;i++) {
+        impSerial.print(UUID[i], DEC);
+      }
       impSerial.print(", \"received\": \"");
       impSerial.print(receivedUUID);
       impSerial.print("\"}");
@@ -161,7 +162,9 @@ void reset() {
 void sendImpValues() {
   impSerial.print("$"); // start delimiter 
   impSerial.print("{\"id\": ");
-  impSerial.print(UUID);
+  for (int i = 0; i < UUID_SIZE;i++) {
+    impSerial.print(UUID[i], DEC);
+  }
   impSerial.print(", \"values\":[");
   for (int i = 0; i< timestamp_pos; i++) {
     impSerial.print(timestamps[i]);
@@ -171,8 +174,10 @@ void sendImpValues() {
   }
   impSerial.print("]}");
   impSerial.println("#"); // end delimiter for imp code 
-  Serial.print("UUID:");
-  Serial.println(UUID);
+//  Serial.print("UUID:");
+//  for (int i = 0; i< 16; i++) {
+//    Serial.println(UUID[i], DEC);
+//  }
   Serial.println("Sent handshake data to the imp");
   sendMessage = true;
   led_count = 1;
@@ -218,7 +223,9 @@ void loop(void)
   if ( sendMessage ) {
     sendMessage = false;
     Serial.print("Now broadcasting UUID ");
-    Serial.println(UUID);
+  for (int i = 0; i < UUID_SIZE;i++) {
+    Serial.print(UUID[i], DEC);
+  }
     radio.stopListening();
     radio.write( &UUID, sizeof(UUID) );
     radio.startListening();
@@ -242,7 +249,8 @@ Device UUID Code
 *****************************************/
 
 
-/* Returns a boolean whether not not
+/* 
+  Returns a boolean whether not not
   the device id is stored by testing 
   for the existence of the start up 
   string code.
@@ -260,7 +268,10 @@ boolean deviceUUIDIsStored() {
    return true;
 }
 
-
+/* 
+  Pulls the UUID out of PROM and into
+  the global UUID variable.
+  */
 void loadDeviceUUIDFromEEPROM() {
   // Grab all the bytes from the UID in EEPROM
   for (int i = 0; i < UUID_SIZE; i++) {
@@ -268,10 +279,13 @@ void loadDeviceUUIDFromEEPROM() {
   } 
 }
 
-
+/* 
+  Creates a new UUID, stores it in EEPROM,
+  and loads it into the global UUID variable.
+  */
 void createNewUUID() {
-  // Clear some space for the uuid 
-  uint8_t *address = (uint8_t *)malloc(UUID_SIZE);
+  // Clear some space for the uuid
+  uint8_t *address = (uint8_t *)malloc(UUID_SIZE);;
   memset(address, '\0', UUID_SIZE);
   
   // Create the uuid
@@ -282,7 +296,8 @@ void createNewUUID() {
   // Store that UUID in EEPROM
   for (int i = 0; i < UUID_SIZE; i++) {
     EEPROM.write(START_UUID_ADDRESS + i, *(address + i));
-    Serial.print(*(address + i));
+    UUID[i] = *(address + i);
+    Serial.print(UUID[i]);
   }
   
   Serial.println("");
@@ -290,26 +305,36 @@ void createNewUUID() {
   // Free the space at the address
   free(address);
   
-  // Store the start up code so we know we have a code
+  // Store the start up code so we know we have a uuid
   EEPROM_writeAnything(START_UP_STRING_CODE_ADDRESS, START_UP_STRING_CODE);
 }
 
+
+/* 
+  Helper method for clearing EEPROM.
+  */
 void manuallyClearEEPROM(int address, int s) {
   for (int i = 0; i < s; i++) {
     EEPROM.write(address + i, 0);
   }
 }
 
+/* 
+  Useful debugging method for clearing the UUID.
+  */
 void clearUUID() {
   manuallyClearEEPROM(START_UUID_ADDRESS, UUID_SIZE);
   manuallyClearEEPROM(START_UP_STRING_CODE_ADDRESS, sizeof(START_UP_STRING_CODE));
 }
 
+/* 
+  Print the UUID out in human readable form
+  */
 void printUUID() {
   if (deviceUUIDIsStored()) {
     
       for (int i = 0; i < UUID_SIZE; i++) {
-      Serial.print(UUID[i]);
+      Serial.print(UUID[i], DEC);
     }
    Serial.println("");  
   }  
