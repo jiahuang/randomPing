@@ -46,11 +46,11 @@ const int START_UP_STRING_CODE_ADDRESS = 230;
 // The first address that the UUID is saved at
 const int START_UUID_ADDRESS = 250;
 // The size, in bytes, of the UUID
-const int UUID_SIZE = 16;
+const int UUID_SIZE = 8;
 // The UUID itself. It can be loaded
 byte UUID[UUID_SIZE];
 
-char * receivedUUID = "000000"; // blank UUID for the received message
+byte receivedUUID[UUID_SIZE]; // blank UUID for the received message
 
 int led_count = -1;
 long timestamp = 0;
@@ -122,16 +122,24 @@ boolean checkReceive() {
     bool finished = false;
     while (!finished)
     {
-      finished = radio.read( &receivedUUID, sizeof(receivedUUID) );
+      finished = radio.read( &receivedUUID, UUID_SIZE );
       Serial.print("Sending received UUID to the imp: ");
-      Serial.println(receivedUUID);
+      for (int i = 0; i < UUID_SIZE;i++) {
+        Serial.print(receivedUUID[i], DEC);
+      }
+      Serial.println();
+//      Serial.println(receivedUUID);
+      Serial.println("That was the received UUID");
       impSerial.print("$");
       impSerial.print("{\"id\": ");
       for (int i = 0; i < UUID_SIZE;i++) {
         impSerial.print(UUID[i], DEC);
       }
       impSerial.print(", \"received\": \"");
-      impSerial.print(receivedUUID);
+      for (int i = 0; i < UUID_SIZE;i++) {
+        impSerial.print(receivedUUID[i], DEC);
+      }
+//      impSerial.print(receivedUUID, DEC);
       impSerial.print("\"}");
       impSerial.println("#");
     }
@@ -227,7 +235,7 @@ void loop(void)
     Serial.print(UUID[i], DEC);
   }
     radio.stopListening();
-    radio.write( &UUID, sizeof(UUID) );
+    radio.write( &UUID, UUID_SIZE );
     radio.startListening();
   }
 
