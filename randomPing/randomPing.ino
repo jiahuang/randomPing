@@ -125,7 +125,7 @@ void setup(void)
   }
   
   // Uncomment the line below to clear the sync
-//    clearSync();
+//  clearSync();
   if (!isStoredEEPROM(START_UP_SYNC_CODE, START_UP_SYNC_ADDRESS)){
     Serial.println("device is not synced");
     ledError = true;
@@ -232,10 +232,14 @@ void loop(void)
 {
   // check if the device got synced
   if (!synced) {
-    int * ref;
+    int ref = 0;
     if ( checkImpSerial(ref) ){
-      if (*ref == 1) {
+      Serial.print("available: ");
+      Serial.println(ref);
+      if (ref == 1) {
         synced = true;
+        ledError = false;
+        Serial.print("sync is true");
         // Store the sync flag so we know we're synced
         EEPROM_writeAnything(START_UP_SYNC_ADDRESS, START_UP_SYNC_CODE);
       } else {
@@ -300,14 +304,22 @@ void loop(void)
 }
 
 // checking imp values
-boolean checkImpSerial(int * ref) {
+boolean checkImpSerial(int & ref) {
   if (impSerial.available()) {
     int temp = impSerial.read();
-    *ref = impSerial.read();
+    ref = temp;
+//    Serial.print("available ");
+//    Serial.println(ref);
     return true;
   }
   return false;
 }
+
+
+void clearSync() {
+  manuallyClearEEPROM(START_UP_SYNC_ADDRESS, sizeof(START_UP_SYNC_CODE));
+}
+
 
 /*****************************************
 
