@@ -212,7 +212,7 @@ void sendImpValues() {
   impSerial.print("$"); // start delimiter 
   impSerial.print("{\"id\": \"");
   for (int i = 0; i < UUID_SIZE; i++) {
-    impSerial.print(UUID[i], DEC);
+    impSerial.print(UUID[i], HEX);
     if ( i < UUID_SIZE - 1) {
       impSerial.print("|");
     }
