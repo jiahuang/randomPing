@@ -22,10 +22,10 @@ SoftwareSerial impSerial(8, 9);
 // handshake and accelerometer thresholds
 const int TIME_THRESHOLD_MIN = 100;
 const int TIME_THRESHOLD_MAX = 500;
-const int MIN_CROSSINGS = 4;
-const int MAX_CROSSINGS = 40;
-const int THRESHOLD = 3;
-const int MAX_THRESHOLD = 5;
+const int MIN_CROSSINGS = 8;
+const int MAX_CROSSINGS = 20;
+const int THRESHOLD = 5;
+const int MAX_THRESHOLD = 20;
 const int AVG_SIZE = 10; // average the first values for a baseline
 const int DELAY_TIME = 1; 
 const short ANALOG_PIN = 5; 
@@ -227,7 +227,14 @@ void sendImpValues() {
   impSerial.print("]}");
   
   impSerial.println("#"); // end delimiter for imp code 
-  Serial.println("Sent handshake data to the imp");
+  
+  for (int i = 0; i< timestamp_pos; i++) {
+    Serial.print(timestamps[i]);
+    if (i < timestamp_pos - 1) {
+      Serial.print(", ");
+    }
+  }
+  Serial.println("... Sent handshake data");
   sendMessage = true;
   led_count = 0;
   reset();
@@ -264,10 +271,10 @@ void loop(void)
 
    // check if value has crossed over median
   if (crossedAvg()) {
-//    Serial.print("prev: ");
-//    Serial.print(prev);
-//    Serial.print(" current: ");
-//    Serial.println(current);
+    Serial.print("prev: ");
+    Serial.print(prev);
+    Serial.print(" current: ");
+    Serial.println(current);
     if (timestamp_pos >= MAX_CROSSINGS) {
       //send over the data
       sendImpValues();
