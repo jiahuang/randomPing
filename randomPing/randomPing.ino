@@ -125,7 +125,7 @@ void setup(void)
   }
   
   // Uncomment the line below to clear the sync
-//  clearSync();
+  clearSync();
   if (!isStoredEEPROM(START_UP_SYNC_CODE, START_UP_SYNC_ADDRESS)){
     Serial.println("device is not synced");
     ledError = true;
@@ -148,7 +148,7 @@ boolean checkReceive() {
       finished = radio.read( &receivedUUID, UUID_SIZE );
       Serial.print("Sending received UUID to the imp: ");
       for (int i = 0; i < UUID_SIZE;i++) {
-        Serial.print(receivedUUID[i], DEC);
+        Serial.print(receivedUUID[i], HEX);
       }
       Serial.println();
 //      Serial.println(receivedUUID);
@@ -156,11 +156,17 @@ boolean checkReceive() {
       impSerial.print("$");
       impSerial.print("{\"id\": \"");
       for (int i = 0; i < UUID_SIZE;i++) {
-        impSerial.print(UUID[i], DEC);
+        impSerial.print(UUID[i], HEX);
+        if ( i < UUID_SIZE - 1) {
+          impSerial.print("|");
+        }
       }
       impSerial.print("\", \"received\": \"");
       for (int i = 0; i < UUID_SIZE;i++) {
-        impSerial.print(receivedUUID[i], DEC);
+        impSerial.print(receivedUUID[i], HEX);
+        if ( i < UUID_SIZE - 1) {
+          impSerial.print("|");
+        }
       }
 //      impSerial.print(receivedUUID, DEC);
       impSerial.print("\"}");
@@ -204,11 +210,14 @@ void reset() {
   */
 void sendImpValues() {
   impSerial.print("$"); // start delimiter 
-  impSerial.print("{\"id\": ");
-  for (int i = 0; i < UUID_SIZE;i++) {
+  impSerial.print("{\"id\": \"");
+  for (int i = 0; i < UUID_SIZE; i++) {
     impSerial.print(UUID[i], DEC);
+    if ( i < UUID_SIZE - 1) {
+      impSerial.print("|");
+    }
   }
-  impSerial.print(", \"values\":[");
+  impSerial.print("\", \"values\":[");
   for (int i = 0; i< timestamp_pos; i++) {
     impSerial.print(timestamps[i]);
     if (i < timestamp_pos - 1) {
@@ -230,21 +239,27 @@ void sendImpValues() {
 
 void loop(void)
 {
+//  if (impSerial.available()) {
+//    Serial.println(impSerial.read());
+//    }
+    
   // check if the device got synced
   if (!synced) {
-    int ref = 0;
-    if ( checkImpSerial(ref) ){
-      Serial.print("available: ");
-      Serial.println(ref);
-      if (ref == 1) {
-        synced = true;
-        ledError = false;
-        Serial.print("sync is true");
-        // Store the sync flag so we know we're synced
-        EEPROM_writeAnything(START_UP_SYNC_ADDRESS, START_UP_SYNC_CODE);
-      } else {
-        ledError = true;
+    byte received[UUID_SIZE];
+    if ( checkImpSerial( received ) ){
+      Serial.println("available: ");
+      for (int i = 0; i < UUID_SIZE; i++) {
+        Serial.println(received[i], HEX);
+        if (received[i] != UUID[i]) {
+          ledError = true;
+          return;
+        }
       }
+      synced = true;
+      ledError = false;
+      Serial.print("synced");
+      // Store the sync flag so we know we're synced
+      EEPROM_writeAnything(START_UP_SYNC_ADDRESS, START_UP_SYNC_CODE);
     }
   }
   
@@ -285,7 +300,7 @@ void loop(void)
     sendMessage = false;
     Serial.print("Now broadcasting UUID ");
     for (int i = 0; i < UUID_SIZE;i++) {
-      Serial.print(UUID[i], DEC);
+      Serial.print(UUID[i], HEX);
     }
     radio.stopListening();
     radio.write( &UUID, UUID_SIZE );
@@ -303,13 +318,32 @@ void loop(void)
   delay(DELAY_TIME);
 }
 
+boolean readFromImp(byte * received, int & found){
+  while (impSerial.available()) {
+//    Serial.println(impSerial.read(), HEX);
+    byte temp = impSerial.read();
+    received[found] = temp;
+    Serial.println(temp);
+    found++;
+    if (found >= UUID_SIZE ) {
+      return true;
+    }
+    delay(10);
+//  received = 
+  }
+  if (found >= UUID_SIZE) {
+    return true;
+  }
+  return false;
+}
+
 // checking imp values
-boolean checkImpSerial(int & ref) {
+boolean checkImpSerial(byte * received) {
+  
   if (impSerial.available()) {
-    int temp = impSerial.read();
-    ref = temp;
-//    Serial.print("available ");
-//    Serial.println(ref);
+    int found = 0;
+    while (!readFromImp(received, found)){}
+    Serial.println("...available");
     return true;
   }
   return false;
@@ -413,7 +447,7 @@ void printUUID() {
   if (isStoredEEPROM(START_UP_STRING_CODE, START_UP_STRING_CODE_ADDRESS)) {
     
       for (int i = 0; i < UUID_SIZE; i++) {
-      Serial.print(UUID[i], DEC);
+      Serial.print(UUID[i], HEX);
     }
    Serial.println("");  
   }  
