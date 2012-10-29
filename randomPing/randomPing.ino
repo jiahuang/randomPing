@@ -168,7 +168,7 @@ boolean checkReceive() {
           impSerial.print("|");
         }
       }
-//      impSerial.print(receivedUUID, DEC);
+//      impSerial.print(receivedUUID, HEX);
       impSerial.print("\"}");
       impSerial.println("#");
     }
@@ -227,10 +227,6 @@ void sendImpValues() {
   impSerial.print("]}");
   
   impSerial.println("#"); // end delimiter for imp code 
-//  Serial.print("UUID:");
-//  for (int i = 0; i< 16; i++) {
-//    Serial.println(UUID[i], DEC);
-//  }
   Serial.println("Sent handshake data to the imp");
   sendMessage = true;
   led_count = 0;
@@ -239,17 +235,13 @@ void sendImpValues() {
 
 void loop(void)
 {
-//  if (impSerial.available()) {
-//    Serial.println(impSerial.read());
-//    }
     
   // check if the device got synced
   if (!synced) {
     byte received[UUID_SIZE];
     if ( checkImpSerial( received ) ){
-      Serial.println("available: ");
       for (int i = 0; i < UUID_SIZE; i++) {
-        Serial.println(received[i], HEX);
+        Serial.print(received[i], HEX);
         if (received[i] != UUID[i]) {
           ledError = true;
           return;
@@ -257,7 +249,7 @@ void loop(void)
       }
       synced = true;
       ledError = false;
-      Serial.print("synced");
+      Serial.println("...synced");
       // Store the sync flag so we know we're synced
       EEPROM_writeAnything(START_UP_SYNC_ADDRESS, START_UP_SYNC_CODE);
     }
@@ -320,16 +312,13 @@ void loop(void)
 
 boolean readFromImp(byte * received, int & found){
   while (impSerial.available()) {
-//    Serial.println(impSerial.read(), HEX);
     byte temp = impSerial.read();
     received[found] = temp;
-    Serial.println(temp);
     found++;
     if (found >= UUID_SIZE ) {
       return true;
     }
     delay(10);
-//  received = 
   }
   if (found >= UUID_SIZE) {
     return true;
@@ -343,7 +332,6 @@ boolean checkImpSerial(byte * received) {
   if (impSerial.available()) {
     int found = 0;
     while (!readFromImp(received, found)){}
-    Serial.println("...available");
     return true;
   }
   return false;
