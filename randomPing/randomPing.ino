@@ -22,10 +22,10 @@ SoftwareSerial impSerial(8, 9);
 // handshake and accelerometer thresholds
 const int TIME_THRESHOLD_MIN = 100;
 const int TIME_THRESHOLD_MAX = 500;
-const int MIN_CROSSINGS = 8;
+const int MIN_CROSSINGS = 4;
 const int MAX_CROSSINGS = 20;
-const int THRESHOLD = 5;
-const int MAX_THRESHOLD = 20;
+const int THRESHOLD = 4;
+const int MAX_THRESHOLD = 100;
 const int AVG_SIZE = 10; // average the first values for a baseline
 const int DELAY_TIME = 1; 
 const short ANALOG_PIN = 5; 
@@ -34,6 +34,7 @@ const int LED_DELAY = 1000;
 
 int led_count = -1;
 boolean ledError = false;
+boolean led_on = false;
 long timestamp = 0;
 long timestamps[MAX_CROSSINGS];
 int timestamp_pos = 0;
@@ -81,16 +82,7 @@ const uint64_t pipe = 0xF0F0F0F0E1LL;
 
 void setup(void)
 { 
-  // set up the accelerometer
-  int avgPos = 0;
-  while (avgPos < AVG_SIZE) {
-    avgPos++;
-    avg += analogRead(ANALOG_PIN);
-    current = prev = analogRead(ANALOG_PIN);
-    delay(DELAY_TIME);
-  }
-  avg = avg/AVG_SIZE;
-  
+  setAverage();
   Serial.begin(57600);
   impSerial.begin(19200);
   printf_begin();
@@ -125,7 +117,7 @@ void setup(void)
   }
   
   // Uncomment the line below to clear the sync
-  clearSync();
+  //clearSync();
   if (!isStoredEEPROM(START_UP_SYNC_CODE, START_UP_SYNC_ADDRESS)){
     Serial.println("device is not synced");
     ledError = true;
@@ -134,6 +126,21 @@ void setup(void)
     Serial.println("device already synced");
   }
 }
+
+// sets the average for the accelerometer
+void setAverage() {
+  // set up the accelerometer
+  Serial.println("Setting accelerometer");
+  int avgPos = 0;
+  while (avgPos < AVG_SIZE) {
+    avgPos++;
+    avg += analogRead(ANALOG_PIN);
+    current = prev = analogRead(ANALOG_PIN);
+    delay(DELAY_TIME);
+  }
+  avg = avg/AVG_SIZE;
+}
+
 
 /*
   Check if nRF24 has received any data. If it has, send it to the imp
@@ -183,6 +190,15 @@ boolean crossedAvg() {
     abs(current - prev) >= THRESHOLD && abs(current-prev) < MAX_THRESHOLD );
 }
 
+void toggle_led() {
+  if (led_on) {
+    led_on = false;
+    digitalWrite(LED_PIN, LOW);
+  } else {
+    led_on = true;
+    digitalWrite(LED_PIN, HIGH);
+  }
+}
 /* 
   Flashes the LED for LED_DELAY time if something has occured
   set led_count = 0 when this should go off
@@ -201,6 +217,7 @@ void flash_led() {
   resets the timestamp logging
  */
 void reset() {
+  Serial.println("RESET");
   timestamp_pos = 0;
   timestamp = 0;
 }
@@ -240,6 +257,8 @@ void sendImpValues() {
   reset();
 }
 
+// HERE'S THE LOOP
+
 void loop(void)
 {
     
@@ -267,14 +286,25 @@ void loop(void)
   
   // get current value
   current = analogRead(ANALOG_PIN);
+//  Serial.print("avg: ");
+//  Serial.print(avg);
+//  Serial.print(" prev: ");
+//  Serial.print(prev);
+//  Serial.print(" current: ");
 //  Serial.println(current);
 
    // check if value has crossed over median
   if (crossedAvg()) {
+    toggle_led();
+    Serial.print("Crossed: ");
+    Serial.print(current - prev);
     Serial.print("prev: ");
     Serial.print(prev);
     Serial.print(" current: ");
-    Serial.println(current);
+    Serial.print(current);
+    Serial.print(" avg: ");
+    Serial.println(avg);
+  
     if (timestamp_pos >= MAX_CROSSINGS) {
       //send over the data
       sendImpValues();
@@ -288,11 +318,22 @@ void loop(void)
       timestamp = 0;
       timestamp_pos++;
     }
-  } else if (timestamp_pos >= MIN_CROSSINGS && timestamp > TIME_THRESHOLD_MAX){
-    // send over the data
-    sendImpValues();
-  } else if (timestamp_pos < MIN_CROSSINGS && timestamp > TIME_THRESHOLD_MAX) {
-    reset();
+  } else {
+    if ((prev < avg && current > avg) || (prev > avg && current < avg)) {
+      Serial.print("prev: ");
+      Serial.print(prev);
+      Serial.print(" current: ");
+      Serial.print(current);
+      Serial.print(" diff: ");
+      Serial.println(current - prev);
+      
+    }
+    if (timestamp_pos >= MIN_CROSSINGS && timestamp > TIME_THRESHOLD_MAX){
+      // send over the data
+      sendImpValues();
+    } else if (timestamp_pos < MIN_CROSSINGS && timestamp > TIME_THRESHOLD_MAX) {
+      reset();
+    }
   }
   
   if ( sendMessage ) {
