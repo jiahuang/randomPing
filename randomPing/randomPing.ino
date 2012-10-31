@@ -295,7 +295,7 @@ void loop(void)
 
    // check if value has crossed over median
   if (crossedAvg()) {
-    toggle_led();
+//    toggle_led();
     Serial.print("Crossed: ");
     Serial.print(current - prev);
     Serial.print("prev: ");
